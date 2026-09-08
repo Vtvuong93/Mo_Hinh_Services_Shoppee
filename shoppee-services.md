@@ -132,7 +132,7 @@ flowchart TB
     end
 
     AppTier --> Postgres
-    Postgres --> Redis
+    AppTier --> Redis
 
     subgraph Kafka ["Kafka Cluster 3-Brokers (Event Streaming)"]
         direction LR
