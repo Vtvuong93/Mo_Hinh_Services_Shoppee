@@ -10,12 +10,12 @@
 
 **Nguyên tắc chính của kiến trúc:**
 - **Phân tán Data:** Mỗi service phụ trách một chức năng và sở hữu cơ sở dữ liệu riêng biệt. Service này không truy cập trực tiếp DB của service khác.
-- **Giao tiếp đồng bộ (gRPC / HTTP):** Các luồng cần phản hồi tức thì (khách hàng đang chờ) như Gateway gọi sang Auth hoặc Search lấy kết quả, sẽ dùng **gRPC** để tối ưu hóa tốc độ và giảm độ trễ (latency).
-- **Giao tiếp bất đồng bộ - EDA (Event-Driven Architecture):** Tách biệt các tác vụ nền. Thay vì Product gọi trực tiếp Search khi có dữ liệu mới, Product sẽ đẩy một sự kiện (Event) vào Kafka/RabbitMQ.
+- **Giao tiếp đồng bộ (gRPC / HTTP):** Các luồng cần phản hồi tức thì (khách hàng đang chờ) như Gateway gọi sang Auth hoặc Search lấy kết quả, sẽ dùng **gRPC** để tối ưu hóa tốc độ và giảm độ trễ.
+- **Giao tiếp bất đồng bộ - EDA (Event-Driven Architecture):** Tách biệt các tác vụ nền. Thay vì Product gọi trực tiếp Search khi có dữ liệu mới, Product sẽ đẩy một sự kiện vào Kafka/RabbitMQ.
 
-### 1.1. Bức tranh toàn cảnh (Visual Diagram)
+### 1.1. Overview map
 
-Được vẽ theo cú pháp **Mermaid** để thể hiện rõ kiến trúc Microservice, gRPC đa dịch vụ và xử lý Event-driven.
+- Kiến trúc Microservice, gRPC đa dịch vụ.
 
 ```mermaid
 flowchart TB
@@ -73,136 +73,77 @@ flowchart TB
 
 Dựa trên kiến trúc HA (High Availability) tham khảo tiêu chuẩn, từng service ở trên sẽ được triển khai thực tế với mô hình dự phòng chặt chẽ ở mọi lớp (từ Load Balancer, Ứng dụng đến CSDL):
 
-- **Lớp Edge (Nginx LB + Keepalived):** Requests từ Internet đi qua VIP (IP Ảo). Nginx-LB1 và Nginx-LB2 chạy chế độ Active/Passive Failover. Nginx sẽ giải mã TLS (TLS Termination) trước khi chuyển tiếp (route) request vào Gateway.
-- **Lớp App Tier (Microservices):** Chuyên biệt hóa cho tính năng. Tất cả API Gateway, Auth, Product, Search đều thiết kế phi trạng thái (**Stateless**), dễ dàng mở rộng tự động (Scale ngang - auto scaling) thành nhiều Pod/Instance từ 1 đến N tùy tải lượng.
-- **Lớp Data & Cache (Stateful):**
-  - **Postgres HA (Patroni + etcd):** Cụm cơ sở dữ liệu Auth và Product dùng cấu hình 3 nodes: `PG-1 MASTER` (Đọc/Ghi chính), `PG-2 SYNC` (Đồng bộ tức thời - tránh mất dữ liệu), `PG-3 ASYNC` (Đồng bộ ngầm - dự phòng thảm họa).
-  - **Redis Sentinel (3-node):** Cụm Cache/Session chạy `Redis-1` làm Master và `Redis-2`, `Redis-3` dự phòng failover tự động.
-  - **Kafka Cluster:** Sử dụng tối thiểu cụm 3 Brokers để lưu trữ sự kiện EDA bền vững và có Replication phòng lỗi.
+- **Lớp Edge (DNS & Nginx LB):** Requests từ Internet đi qua VIP (IP Ảo qua Keepalived). Nginx-LB1 và Nginx-LB2 chạy chế độ Active/Passive Failover để làm TLS Termination rồi định tuyến.
+- **Lớp FE Tier (Web / Trang SSR):** Nhánh Frontend gồm các node Next.js chạy giao diện (FE-1, FE-2), đặc tính là Stateless và Scale ngang. Sau đó chúng sẽ gọi API ngược qua một **Internal LB** để móc vào App Tier.
+- **Lớp App Tier (Microservices Backend):** Nhánh Backend bao gồm Gateway, Auth, Product, Search. Các service này chạy Stateless, nhưng có điểm mấu chốt là **tích hợp PgBouncer Sidecar** đi kèm để tối ưu hóa pool kết nối vào CSDL.
+- **Lớp Data Hierarchy (Phân mảnh theo HA):**
+  - **Postgres HA (Patroni + etcd):** 3 nodes chính xác như tham chiếu: `PG-1 MASTER`, `PG-2 SYNC`, `PG-3 ASYNC`.
+  - **Redis Sentinel 3-node:** Cụm node `Redis-1`, `Redis-2`, `Redis-3`.
 
 ```mermaid
 flowchart TB
-    classDef client fill:#E2E8F0,stroke:#64748B,stroke-width:2px,color:#000;
-    classDef lb fill:#FDE047,stroke:#CA8A04,stroke-width:2px,color:#000;
-    classDef svc fill:#BFDBFE,stroke:#2563EB,stroke-width:2px,color:#000;
-    classDef db fill:#BBF7D0,stroke:#16A34A,stroke-width:2px,color:#000;
-    classDef cache fill:#FECACA,stroke:#DC2626,stroke-width:2px,color:#000;
-    classDef event fill:#E9D5FF,stroke:#9333EA,stroke-width:2px,stroke-dasharray: 5 5,color:#000;
+    classDef client fill:#f8fafc,stroke:#cbd5e1,stroke-width:2px,color:#0f172a;
+    classDef lb fill:#fef08a,stroke:#ca8a04,stroke-width:2px,color:#000;
+    classDef svc fill:#bfdbfe,stroke:#2563eb,stroke-width:2px,color:#000;
+    classDef db fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#000;
 
     Internet["Internet / Cloudflare DNS"]:::client
-
-    subgraph Edge ["Lớp Edge & Load Balancers (Phân tải vòng ngoài)"]
-        VIP["VIP (keepalived)"]:::lb
-        Nginx1["Nginx-LB1\n(Active)"]:::lb
-        Nginx2["Nginx-LB2\n(Passive)"]:::lb
-        VIP --> Nginx1
-        VIP -.->|"Failover"| Nginx2
-        Nginx1 <.->|"Active / Passive"| Nginx2
-    end
+    VIP["VIP (keepalived)"]:::lb
+    Internet --- VIP
     
-    Internet --> VIP
-
-    subgraph AppTier ["Lớp App Tier (Backend Microservices) - Stateless, Scale Ngang"]
-        direction TB
-        subgraph GatewayTier ["API Gateway Layer"]
-            GW["API Gateway\n(Instance 1..N)"]:::svc
-        end
-        subgraph MicroservicesTier ["Microservices Core (gRPC Internals)"]
-            Auth["Auth Service\n(Instance 1..N)"]:::svc
-            Search["Search Service\n(Instance 1..N)"]:::svc
-            Product["Product Service\n(Instance 1..N)"]:::svc
-        end
-    end
-
-    Nginx1 -->|"TLS termination +\nroute theo path/host"| GatewayTier
+    Nginx1["Nginx-LB1"]:::lb <-- "active/passive failover" --> Nginx2["Nginx-LB2"]:::lb
+    VIP --> Nginx1 & Nginx2
     
-    GatewayTier -->|"Gọi API qua Internal LB"| Auth
-    GatewayTier -->|"Gọi API qua Internal LB"| Search
-    GatewayTier -->|"Gọi API qua Internal LB"| Product
-
-    subgraph DataTier ["Lớp Databases (HA)"]
+    TLS["TLS termination + route theo path/host"]:::client
+    Nginx1 & Nginx2 --- TLS
+    
+    subgraph FETier ["FE tier (stateless, scale ngang)"]
         direction LR
-        subgraph PostgresHA ["Postgres HA (Patroni + etcd)"]
-            PG_Master["PG-1 MASTER"]:::db
-            PG_Sync["PG-2 SYNC"]:::db
-            PG_Async["PG-3 ASYNC"]:::db
-            PG_Master -->|"Đồng bộ lập tức"| PG_Sync
-            PG_Master -.->|"Đồng bộ nền"| PG_Async
-        end
-        
-        SearchIdx["Search Index HA\n(Master-Replica)"]:::db
+        FE1["FE-1\n17 Next.js"]:::svc
+        FE2["FE-2\n17 Next.js"]:::svc
     end
-
-    subgraph CacheTier ["Lớp Caching"]
-        subgraph RedisHA ["Redis Sentinel 3-node"]
-            Redis1["Redis-1 (Master)"]:::cache
-            Redis2["Redis-2 (Replica)"]:::cache
-            Redis3["Redis-3 (Replica)"]:::cache
-            Redis1 --> Redis2 & Redis3
-        end
-    end
-
-    subgraph EDATier ["Event Streaming (Message Bus)"]
-        Kafka["Kafka Cluster\n(3- Brokers)"]:::event
-    end
-
-    Auth --> PG_Master
-    Product --> PG_Master
-    Search --> SearchIdx
     
-    Auth --> Redis1
-    Search --> Redis1
-    
-    Product -.->|"Publish"| Kafka
-    Kafka -.->|"Consume"| Search
+    subgraph AppTier ["App tier (BE) (stateless, PgBouncer sidecar, scale ngang)"]
+        direction LR
+        App1["API Gateway\n(~18svc + gw)"]:::svc
+        App2["Auth/Product\n(~18svc + gw)"]:::svc
+        App3["Search/EDA\n(~18svc + gw)"]:::svc
+    end
+
+    TLS -->|"web (trang, SSR)"| FETier
+    TLS -->|"api (gateway)"| AppTier
+
+    InternalLB["gọi API qua LB\n(LB)"]:::lb
+    FETier --> InternalLB
+    InternalLB -.-> AppTier
+
+    subgraph Postgres ["Postgres HA (Patroni + etcd)"]
+        direction LR
+        PG1["PG-1\nMASTER"]:::db
+        PG2["PG-2\nSYNC"]:::db
+        PG3["PG-3\nASYNC"]:::db
+    end
+
+    subgraph Redis ["Redis Sentinel 3-node"]
+        direction LR
+        R1["Redis-1"]:::db
+        R2["Redis-2"]:::db
+        R3["Redis-3"]:::db
+    end
+
+    AppTier --> Postgres
+    Postgres --> Redis
 ```
 
 ## 2. Đăng nhập và lưu mật khẩu
 
-### 2.1. Lưu password_hash trong Auth DB
-- **Auth Service** quản lý xác thực và lưu thông tin `password_hash` vào Auth DB (có kèm salt). Chỉ Auth service có thể truy cập
-+ Không lưu mật khẩu thô, không mã hoá để giải mã ngược.
-+ Dùng thuật toán băm 1 chiều, không thể dịch ngược về mật khẩu ban đầu
-+ Mỗi mật khẩu cí 1 salt ngẫu nhiên riêng.
+### 2.1. Đăng ký và Lưu mật khẩu
+- **Auth Service** quản lý quá trình đăng ký và lưu trữ thông tin `password_hash` vào Auth DB (có đính kèm salt ngẫu nhiên). Chỉ có Auth Service mới được quyền truy cập dữ liệu này.
+- **Quy tắc bảo mật:** Không lưu mật khẩu thô và không sử dụng mã hóa 2 chiều. Mật khẩu luôn được băm bằng thuật toán 1 chiều, không thể dịch ngược về nguyên bản.
 
-```text
-Người dùng tạo mật khẩu
-  -> HTTPS -> API Gateway -> Auth Service
-  -> băm bằng thuật toán một chiều + salt riêng
-  -> Auth DB: lưu password_hash, salt và tham số băm
-```
-
-### 2.2. Truy vấn tài khoản bằng email/số điện thoại
-- Hệ thống dùng email hoặc số điện thoại (được lập chỉ mục) để tìm kiếm người dùng.
-+ Auth service tìm bản ghi bằng email/số điện thoại
-+ bản ghi trong đó có password_hash, salt và tham số băm
-
-```text
-Người dùng gửi email/số điện thoại + mật khẩu
-  -> Gateway -> Auth Service
-  -> Auth DB: tìm bản ghi bằng chỉ mục email/số điện thoại
-  -> Lấy ra password_hash, salt, tham số băm
-```
-
-### 2.3. Băm và đối chiếu mật khẩu
-- Khi có thông tin, hệ thống băm mật khẩu vừa nhận với salt đã lưu và đối chiếu với `password_hash` gốc.
-
-```text
-(Tiếp theo luồng trên)
-  -> băm mật khẩu nhập vào với salt đã lưu
-  -> so sánh với password_hash
-```
-
-### 2.4. Trả Session hoặc JWT
-- Nếu xác thực thành công, hệ thống trả về Phiên (Session) hoặc Access Token (JWT).
-
-```text
-Xác thực thành công
-  -> tạo Session ID và lưu phiên trong Redis
-     hoặc ký access token JWT
-  -> trả cookie/token cho ứng dụng
-  -> các request sau gửi cookie/token để xác thực
-```
+### 2.2. Đăng nhập và Khởi tạo phiên làm việc
+- **Truy vấn & Đối chiếu:** Khi người dùng đăng nhập, Gateway chuyển request về Auth Service. Hệ thống sẽ truy xuất bảng tài khoản (index theo email/SDT), lấy ra `salt` gốc để băm mật khẩu người dùng vừa nhập. Kết quả sau đó được so sánh với `password_hash` trong DB.
+- **Cấp phát Session/JWT:** Nếu xác thực khớp 100%, hệ thống sẽ sinh một Session ID và lưu trữ phiên vào trong Redis; hoặc tạo ra Access Token (JWT) sau đó ghim vào kết quả trả về cho Client thực hiện các request nghiệp vụ kế tiếp.
 
 **Luồng hoạt động đầy đủ (Sequence Diagram):**
 ```mermaid
