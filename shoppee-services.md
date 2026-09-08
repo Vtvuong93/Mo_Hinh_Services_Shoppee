@@ -77,7 +77,7 @@ flowchart TB
 - **Lớp Data Hierarchy (Phân mảnh theo HA):**
   - **Postgres HA (Patroni + etcd):** 3 nodes chính xác như tham chiếu: `PG-1 MASTER`, `PG-2 SYNC`, `PG-3 ASYNC`.
   - **Redis Sentinel 3-node:** Cụm node `Redis-1`, `Redis-2`, `Redis-3`.
-  - **Kafka Cluster (Event Streaming):** Cụm 3 Broker xử lý giao tiếp bất đồng bộ, luân chuyển event an toàn không mất mát (zero data loss).
+  - **Kafka Cluster (Event Streaming):** Cụm 3 Broker xử lý giao tiếp bất đồng bộ, luân chuyển event an toàn không mất mát.
 
 ```mermaid
 flowchart TB
@@ -153,7 +153,7 @@ flowchart TB
 - **Truy vấn & Đối chiếu:** Khi người dùng đăng nhập, Gateway chuyển request về Auth Service. Hệ thống sẽ truy xuất bảng tài khoản (index theo email/SDT), lấy ra `salt` gốc để băm mật khẩu người dùng vừa nhập. Kết quả sau đó được so sánh với `password_hash` trong DB.
 - **Cấp phát Session/JWT:** Nếu xác thực khớp 100%, hệ thống sẽ sinh một Session ID và lưu trữ phiên vào trong Redis; hoặc tạo ra Access Token (JWT) sau đó ghim vào kết quả trả về cho Client thực hiện các request nghiệp vụ kế tiếp.
 
-**Luồng hoạt động đầy đủ (Sequence Diagram):**
+**Luồng hoạt động đầy đủ:**
 ```mermaid
 sequenceDiagram
     participant Client
@@ -213,7 +213,7 @@ sequenceDiagram
 - Thay vì lưu “sản phẩm chứa những từ nào”, chỉ mục lưu “mỗi từ xuất hiện ở những sản phẩm nào”.
 - Ví dụ: `áo -> [1, 5, 99]`, `thun -> [1, 2, 99]`, `nam -> [1, 3, 5]`.
 
-**Mô hình luồng truy vấn (Autocomplete & Search):**
+**Mô hình luồng truy vấn:**
 ```mermaid
 sequenceDiagram
     participant Client
