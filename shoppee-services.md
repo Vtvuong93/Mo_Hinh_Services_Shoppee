@@ -69,9 +69,7 @@ flowchart TB
     Kafka -.->|"2. Consume Event\n(Async Background)"| SearchSvc
 ```
 
-### 1.2. Topology triển khai thực tế (High Availability & Scale-out)
-
-Dựa trên kiến trúc HA (High Availability) tham khảo tiêu chuẩn, từng service ở trên sẽ được triển khai thực tế với mô hình dự phòng chặt chẽ ở mọi lớp (từ Load Balancer, Ứng dụng đến CSDL):
+### 1.2. Topology thực tế 
 
 - **Lớp Edge (DNS & Nginx LB):** Requests từ Internet đi qua VIP (IP Ảo qua Keepalived). Nginx-LB1 và Nginx-LB2 chạy chế độ Active/Passive Failover để làm TLS Termination rồi định tuyến.
 - **Lớp FE Tier (Web / Trang SSR):** Nhánh Frontend gồm các node Next.js chạy giao diện (FE-1, FE-2), đặc tính là Stateless và Scale ngang. Sau đó chúng sẽ gọi API ngược qua một **Internal LB** để móc vào App Tier.
@@ -79,6 +77,7 @@ Dựa trên kiến trúc HA (High Availability) tham khảo tiêu chuẩn, từn
 - **Lớp Data Hierarchy (Phân mảnh theo HA):**
   - **Postgres HA (Patroni + etcd):** 3 nodes chính xác như tham chiếu: `PG-1 MASTER`, `PG-2 SYNC`, `PG-3 ASYNC`.
   - **Redis Sentinel 3-node:** Cụm node `Redis-1`, `Redis-2`, `Redis-3`.
+  - **Kafka Cluster (Event Streaming):** Cụm 3 Broker xử lý giao tiếp bất đồng bộ, luân chuyển event an toàn không mất mát (zero data loss).
 
 ```mermaid
 flowchart TB
@@ -86,6 +85,7 @@ flowchart TB
     classDef lb fill:#fef08a,stroke:#ca8a04,stroke-width:2px,color:#000;
     classDef svc fill:#bfdbfe,stroke:#2563eb,stroke-width:2px,color:#000;
     classDef db fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#000;
+    classDef event fill:#e9d5ff,stroke:#9333ea,stroke-width:2px,color:#000;
 
     Internet["Internet / Cloudflare DNS"]:::client
     VIP["VIP (keepalived)"]:::lb
@@ -133,6 +133,14 @@ flowchart TB
 
     AppTier --> Postgres
     Postgres --> Redis
+
+    subgraph Kafka ["Kafka Cluster 3-Brokers (Event Streaming)"]
+        direction LR
+        K1["Broker 1"]:::event
+        K2["Broker 2"]:::event
+        K3["Broker 3"]:::event
+    end
+    AppTier -.->|"Produce/Consume Event"| Kafka
 ```
 
 ## 2. Đăng nhập và lưu mật khẩu
