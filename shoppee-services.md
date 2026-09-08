@@ -7,7 +7,7 @@ Nguyên tắc chính:
 - Mỗi service phụ trách một chức năng và sở hữu cơ sở dữ liệu riêng.
 - Service khác không truy cập trực tiếp vào cơ sở dữ liệu của service đó; việc trao đổi phải đi qua API hoặc sự kiện.
 - Giao tiếp đồng bộ: Dùng HTTP/REST hoặc gRPC cho các luồng cần phản hồi tức thì.
-- Giao tiếp bất đồng bộ: Dùng hàng đợi/sự kiện (Kafka/RabbitMQ) cho các tác vụ xử lý nền
+- Giao tiếp bất đồng bộ: Dùng hàng đợi/sự kiện (Kafka/RabbitMQ) cho các tác vụ xử lý nền.
 
 ## 2. Đăng nhập và lưu mật khẩu
 
@@ -58,7 +58,8 @@ Xác thực thành công
 
 **Luồng hoạt động đầy đủ:**
 ```text
-Ứng dụng -> HTTPS -> API Gateway -> Auth Service
+Ứng dụng gửi email/sdt -> HTTPS -> API Gateway kiểm tra định dạng
+  -> Auth Service tìm bản ghi xác thực
   -> Auth DB: tìm tài khoản và lấy password_hash
   -> băm + so sánh mật khẩu
   -> kiểm tra trạng thái tài khoản/MFA
@@ -80,9 +81,14 @@ Search Service -> Search Index: tách từ và tạo Inverted Index
 ```
 
 ### 3.2. Truy vấn, Cache và Xếp hạng
-- **Client truy vấn Search Service:** Gửi yêu cầu tìm kiếm khi gõ nhanh (autocomplete) hoặc tìm toàn văn.
+- **Client truy vấn Search Service:** khi người dùng đang nhập, Search Service tìm tiền tố trong Redis để trả gợi ý nhanh.
 - **Redis xử lý cache/autocomplete:** Lấy kết quả lưu trữ nhanh cho các truy vấn phổ biến.
 - **Search Index trả kết quả và xếp hạng:** Tìm tập hợp phù hợp nhất trong Index rồi xếp hạng, lọc.
+
+
+- Trước khi tìm, hệ thống chuẩn hóa từ khóa, tách từ, bỏ từ dừng không cần thiết.
+- Thay vì lưu “sản phẩm chứa những từ nào”, chỉ mục lưu “mỗi từ xuất hiện ở những sản phẩm nào”.
+- Ví dụ: `áo -> [1, 5, 99]`, `thun -> [1, 2, 99]`, `nam -> [1, 3, 5]`.
 
 ```text
 Người dùng gõ "điện tho" (Autocomplete)
@@ -107,6 +113,15 @@ Search Index (Trả kết quả và xếp hạng)
   -> quảng cáo/cá nhân hóa
   -> chọn trang đầu và trả kết quả
 ```
+
+### 3.3. Hệ thống chọn và sắp xếp kết quả
+
+- Search Index trước tiên tìm tập sản phẩm phù hợp, sau đó chọn nhóm kết quả tốt nhất cho trang đầu.
+- Đánh giá mức độ khớp của từ khóa với tên, mô tả và thuộc tính sản phẩm.
+- Loại sản phẩm không còn hiển thị hoặc không phù hợp bộ lọc; có thể ưu tiên sản phẩm còn hàng, đánh giá tốt hoặc gần khu vực người dùng.
+- Sản phẩm quảng cáo có thể được ưu tiên theo chính sách.
+- Dựa trên lịch sử xem/mua, khoảng giá, thương hiệu hoặc màu sắc người dùng thường quan tâm; phải tuân thủ quyền riêng tư.
+
 
 ## 4. Các service giao tiếp với nhau
 
