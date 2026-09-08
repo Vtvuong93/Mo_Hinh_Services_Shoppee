@@ -65,8 +65,8 @@ flowchart TB
     SearchSvc -- "TCP Sync" --> Redis
 
     %% Publish/Subscribe luồng EDA
-    ProductSvc -- "1. Publish Event\n(ProductChanged)" -.-> Kafka
-    Kafka -. "2. Consume Event\n(Async Background)" .-> SearchSvc
+    ProductSvc -.->|"1. Publish Event\n(ProductChanged)"| Kafka
+    Kafka -.->|"2. Consume Event\n(Async Background)"| SearchSvc
 ```
 
 ### 1.2. Topology triển khai thực tế (High Availability & Scale-out)
@@ -247,8 +247,8 @@ sequenceDiagram
 
     ProdSvc->>ProdDB: Lưu/Cập nhật sản phẩm gốc
     ProdDB-->>ProdSvc: OK
-    ProdSvc-))Kafka: Publish Event (ProductChanged)
-    Kafka-)SearchSvc: Consume Event (Bất đồng bộ)
+    ProdSvc-->>Kafka: Publish Event (ProductChanged)
+    Kafka-->>SearchSvc: Consume Event (Bất đồng bộ)
     SearchSvc->>SearchSvc: Chuẩn hóa, Tách từ (Tokenize)
     SearchSvc->>Index: Cập nhật Inverted Index
     Index-->>SearchSvc: OK
