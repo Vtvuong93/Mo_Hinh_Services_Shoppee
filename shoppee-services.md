@@ -1,4 +1,4 @@
-# Mô hình kiến trúc các service của Shopee
+# Mô hình kiến trúc các service của Shoppee
 
 ## 1. Tổng quan kiến trúc
 

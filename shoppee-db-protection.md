@@ -1,84 +1,33 @@
-# Mô hình database Shoppee qua các lớp bảo vệ
+## 2. Các Thành Phần Xử Lý Cốt Lõi
 
----
+hệ thống sử dụng chiến lược **"Phòng thủ nhiều lớp"** và tuyệt đối **không** cho người dùng truy cập trực tiếp vào cơ sở dữ liệu. 
 
-## 1. Defense-in-Depth Topology
+### 1) CDN & Cloudflare (Mạng Phân Phối Trợ Tốc & Bảo Mật)
+* **Khái niệm:** Mạng lưới các máy chủ lưu trữ bản sao nội dung tĩnh kiêm hệ thống phân giải tên miền (DNS) toàn cầu, hoạt động dưới dạng máy chủ ẩn danh trung gian (Reverse proxy), được đặt rải rác ở nhiều vị trí địa lý.
+* **Tác dụng:** 
+  - **(CDN):** Mạng phân phối nội dung. CDN lưu sẵn các tài nguyên tĩnh (ảnh, video, giao diện) tại trung tâm dữ liệu (lưu trữ đệm) gần người dùng về mặt vật lý nhất để tăng tốc tải trang.
+  - **Bảo mật mạng (WAF & Proxy):** Nằm giữa người dùng và máy chủ gốc để ẩn IP thật. Nó kiểm tra, lọc mọi luồng lưu lượng và chặn các truy cập độc hại, chống tấn công DDoS hiệu quả. Phân giải DNS cũng được xử lý siêu tốc.
+* **Ví dụ:** Một tài khoản ở Hà Nội khi lướt web tải ảnh thì bức ảnh đó được lấy từ máy phân phối nằm ngay tại VN (hoặc Singapore).
+### 2) Cân bằng tải (Load Balancer)
+* **Khái niệm:** Một phần cứng hoặc phần mềm chuyên điều tiết giao thông mạng. Nó nhận một địa chỉ IP logic ở lối vào và định tuyến tới một tập hợp nhiều máy chủ vật lý ở đằng sau phòng khi có cả triệu request ùa tới.
+* **Tác dụng:** Nó đánh giá tình trạng khối lượng công việc hiện hành của hàng nghìn máy chủ. Từ đó thông minh chia đều các yêu cầu đến các máy chủ web có công suất khả dụng cao nhất và trống việc nhất. Lợi ích lớn lao nhất là ngay cả khi một số máy chủ bất ngờ mất điện hư máy, tải sẽ lập tức được tự động san sẻ ra các máy còn sống, giúp quá trình dùng web của người dùng không hề bị nghẽn đứt.
+* **Ví dụ:** Lễ tân trạm y tế: Có 10,000 bệnh nhân đổ bộ vào. Lễ tân (bộ cân bằng tải) sẽ tự động xếp 5,000 người vào phòng khám của Nhóm tư vấn A, 5,000 người gặp Nhóm B. Luôn đảm bảo không bác sĩ nào bị quá tải đứng tim.
 
-```mermaid
-flowchart TD
-    classDef hacker fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#000;
-    classDef network fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,stroke-dasharray: 4 4,color:#000;
-    classDef app fill:#e0f2fe,stroke:#0ea5e9,stroke-width:2px,color:#000;
-    classDef cache fill:#fef08a,stroke:#ca8a04,stroke-width:2px,color:#000;
-    classDef pool fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#000;
-    classDef db fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#000;
-    classDef secure fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#000;
+### 3) Kiến Trúc Microservices
+* **Khái niệm:** Phương pháp chia nhỏ một ứng dụng nguyên khối  thành hàng trăm module nhỏ chuyên biệt lo 1 nghiệp vụ độc lập.
+* **Ví dụ:** Ứng dụng Shopee: Nếu hôm đó phân hệ thẻ "Thanh Toán" bị treo giật, người dùng vẫn có thể "Tìm kiếm hàng", "Nhắn tin hỏi Shop" thoải mái vì các chức năng đó nằm ở cụm máy chủ khác.
 
-    classDef physical fill:#f1f5f9,stroke:#64748b,stroke-width:2px,color:#000,stroke-dasharray: 10 5;
+### 4) In-memory Cache (Bộ Nhớ Đệm Redis)
+* **Khái niệm:** Cơ sở dữ liệu tạm thời chạy truy xuất dữ liệu trực tiếp trên Bộ nhớ trong (RAM) của máy chủ với thời gian ngắn.
+* **Tác dụng:** Giải pháp là đem toàn bộ dữ liệu thường xuyên được hàng dài người dùng gọi nhiều (lượt like, danh sách món hàng sale) để sẵn trên bộ đệm RAM. Lớp cache này hấp thụ tới hơn 80-90% lượt tải đáng nhẽ giáng thẳng xuống Database truyền thống.
+* **Ví dụ:** Mỗi lần vào profile Facebook, thay vì phải vào cơ sở dữ liệu để tính toán lấy ra con số lượt theo dõi, hệ thống rẽ nhánh nhặt luôn số đếm có sẵn đó nằm ngay ngắn trên RAM.
 
-    Client["Người dùng / Hacker"]:::hacker
+### 5) Message Queue (Hàng Đợi Kafka)
+* **Khái niệm:** Nền tảng luồng thông điệp được thiết kế lập các hàng đệm trung chuyển chờ đợi giao dịch để ứng dụng làm việc lệch pha (bất đồng bộ).
+* **Tác dụng:** tạo "Phòng chờ xếp hàng". Vào dịp lễ tết có triệu người dùng tương tác thả tim cực mạnh tại một mốc giờ vàng. Nếu hệ thống ép DB phục vụ ngay lập tức bằng mọi giá thì Server chết sặc liền. Kafka sẽ làm phễu đẩy hết luồng yêu cầu ồ ạt khổng lồ cất kho vào Hàng Đợi. Các server ở hậu phương cứ túc tắc từ từ rút từng mẩu ra xử lý theo năng lực vật lý thật sự.
 
-    subgraph Layer1 ["Layer 1: Physical Data Center"]
-        direction TB
-        
-        subgraph DefenseLayers ["Vành đai Mạng nội bộ"]
-            direction TB
+### 6) Database Scaling (Phân Mảnh & Nhân Bản Cơ Sở Dữ Liệu)
+* **Tác dụng:**
+  - **Tạo bản sao & Chia Đọc/Ghi (Read/Write Replica):** Phần lớn hành vi người dùng là Lướt (Đọc). Ta quy hoạch đúng 1 DB hệ trọng (Master) chuyên sâu phục vụ nhu cầu Ghi/Sửa. Bên cạnh đó, dựng lập hàng chục chiếc máy bản sao nhân bản DB Master sang (Replica) nhằm chia lửa riêng rẽ tiếp đón toàn bộ khách ghé thăm xin yêu cầu Đọc.
+  - **Phân mảnh Sharding :** Chặt và xé nhỏ cái túi database khổng lồ thành nhiều ngăn phần cứng vật lý hoàn toàn tách biệt. Thường dùng "Khóa phân vùng" qua giá trị băm mã ID. Từ khối lượng tỉ người gom một mối giờ đây việc ghi chép tra tìm được bẻ nhỏ, chạy song song với nhau trên hàng trăm máy.
 
-            Nginx["Layer 2 (Network): Nginx / WAF"]:::network
-            
-            Gateway["Layer 3 (App): API Gateway"]:::app
-            Microservices["Layer 3 (App): Backend Microservices"]:::app
-            
-            Redis["Layer 3 (Cache): Redis Sentinel"]:::cache
-            
-            PgBouncer["Layer 3 (Pool): PgBouncer Sidecar"]:::pool
-            
-            Postgres["Layer 4 (DB Instance): Postgres HA (RBAC)"]:::db
-            
-            DataEnc["Layer 5 (Data): Mã hóa ổ đĩa (Encryption at Rest)"]:::secure
-        end
-    end
-
-    Client -- "Internet Traffic" --> Nginx
-    Nginx -- "Routing Private VPC" --> Gateway
-    Gateway -- "Xác thực JWT" --> Microservices
-    
-    Microservices -.->|"Bước 1: Đọc Cache"| Redis
-    Redis -.->|"Cache Hit (Bỏ qua DB)"| Microservices
-    
-    Microservices -- "Bước 2: Cache Miss / Ghi" --> PgBouncer
-    PgBouncer -- "Xếp hàng (Connection Pool)" --> Postgres
-    Postgres -- "Lưu trữ vật lý" --> DataEnc
-```
-
----
-
-## 2. Ý nghĩa của các lớp bảo vệ
-
-### Lớp 1: Physical Security (Bảo mật cốt lõi hạ tầng)
-*Bảo vệ hệ thống trước sự cố trộm cắp vật lý, cháy nổ, phá hoại.*
-- Máy chủ vật lý chứa Database phải đạt chuẩn hệ sinh thái đám mây quốc tế như AWS Tier 3. Toàn bộ khu vực được bao quát bởi Camera an ninh, yêu cầu xác thực nhận diện sinh trắc học và hệ thống phòng cháy chữa cháy an toàn. Môi trường đặt Server tách rời tuyệt đối với các khu vực tự do.
-
-### Lớp 2: Network Security (Bảo mật Tầng Biên Mạng)
-*Vành đai thép bảo vệ server khỏi Thế giới Internet.*
-- **Chống DDoS và Quét cổng:** Đặt Nginx hoặc Cloudflare ở biên mạng ngoài cùng để làm màng lọc đánh bay các truy vấn bất chính.
-- **Phân tách mạng VPC:** Postgres và Redis tuyệt đối Không dùng Public IP và Không mở lộ Port kết nối ra thế giới. Database cấu hình chỉ được phép nghe và trả lời truy vấn từ dải IP nội tâm nằm trong Private Subnet của mạng ứng dụng Backend.
-
-### Lớp 3: Application & Host Security (Lớp Khiên Kiến Trúc Ứng Dụng)
-*Chặn đứng SQL Injection và chống ngập lụt hệ thống.*
-- **Application Logic:** Ở điểm chạm đầu tiên, mọi luồng giao tiếp phải cung cấp chuỗi JWT hợp lệ cho API Gateway. Đi sâu vào Backend Microservices, các truy vấn sẽ được làm sạch bằng công cụ cầu nối cơ sở dữ liệu ORM, từ đó loại bỏ hoàn toàn các mã lệnh SQL Injection độc hại trước khi tiến tới Database.
-- **Xả tải & Giảm xung chấn:**
-  - **Redis Cache:** Tạo trạm chờ bảo vệ Database không chìm trong biển truy cập bằng việc đáp ứng sẵn dữ liệu thường xuyên cập nhật.
-  - **PgBouncer:** Đóng vai trò kiểm soát luồng. Khi các server NextJS tự động nhân bản, số lượng kết nối gửi về Database sẽ ồ ạt. PgBouncer giúp gom nhóm các kết nối phân tán này theo hàng đợi nhằm ngăn Postgres không sụp đổ vì cạn kiệt tài nguyên luồng kết nối.
-
-### Lớp 4: Database Instance (Bảo mật Quản Trị Hệ Thống DB)
-*Kiểm duyệt chặt chẽ ngay cửa phòng kho chứa dữ liệu.*
-- **Phân quyền RBAC:** Phân mảnh quản trị nội bộ theo khái niệm Đặc Quyền Tối Thiểu. Ứng dụng Auth Service chỉ dùng một tài khoản chỉ định để đọc riêng rẽ bảng Thông tin người dùng. Nếu tin tặc chiếm quyền điều khiển của hệ thống Sản phẩm, chúng không thể lợi dụng tài khoản nội bộ đó để truy xuất sang bảng Người dùng.
-- **Auditing & Monitoring:** Kích hoạt chức năng của Postgres để giám sát tự động các câu lệnh truy vấn bất minh, liên tục cảnh báo lượng đăng nhập thất bại giúp phát hiện nhanh các dấu hiệu tấn công.
-
-### Lớp 5: Data Security (Lõi Bảo Mật Dữ Liệu Thực)
-*Bảo vệ ở điểm cuối của đĩa cứng.*
-- Mục tiêu tối thượng của mã hoá là đề phòng kịch bản tin tặc tháo dỡ toàn bộ dàn ổ cứng vật lý ra cũng không thể nào đọc hiểu mã lõi.
-- **Mã hoá ổ cứng:** Mã hóa bảo mật trực tiếp ở cấp độ cấu trúc logic của đĩa lưu trữ.
-- **Mã hoá trường Dữ liệu:** Mật khẩu đăng nhập hay mã thẻ tín dụng của khách hàng được băm một chiều và tiếp tục mã hoá dưới dạng chuỗi ngay từ trên bề mặt Backend code trước khi dội xuống hệ quản trị Database.
-- **Sao lưu:** Thiết lập các chốt sao lưu hệ thống bản ghi Database định kỳ tự động, chuyển vị trí dữ liệu về các kho lưu trữ đông lạnh để khôi phục nhanh mọi tổn thất trong ngày định mệnh.
